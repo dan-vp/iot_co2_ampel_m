@@ -256,6 +256,8 @@ class Data_Extractor:
             df["hour"] = df["date_time"].dt.hour
             df["month"] = df["date_time"].dt.month
 
+            df.drop(columns = ["building_name"], axis = 1, inplace = True)
+
 
             return df
 
