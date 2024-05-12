@@ -127,7 +127,7 @@ class Data_Extractor:
 
 
 
-    class Data_Preprocessing:
+class Data_Preprocessing:
 
         def __init__(self, get_outliers_out = True):
             self.get_outliers_out = get_outliers_out
@@ -178,6 +178,7 @@ class Data_Extractor:
         def convert_features(self, df):
             """Convert the formats of features to their correct ones."""
 
+            df = df[df["date_time"].notna()]
             df["date_time"] = pd.to_datetime(df["date_time"])
             df["snr"] = df["snr"].astype("float")
             return df
@@ -250,13 +251,9 @@ class Data_Extractor:
             for feature in ["tmp", "hum", "CO2", "VOC", "vis", "IR", "BLE", "vis"]:
                     df[f"{feature}_diff"] = df.groupby('room_number')[feature].diff()
 
-            df.fillna(0, inplace = True)
-
             df["dayofweek"] = df["date_time"].dt.dayofweek
             df["hour"] = df["date_time"].dt.hour
             df["month"] = df["date_time"].dt.month
-
-            df.drop(columns = ["building_name"], axis = 1, inplace = True)
 
 
             return df
