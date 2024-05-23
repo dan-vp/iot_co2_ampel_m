@@ -5,129 +5,92 @@ import numpy as np
 import time
 
 
-class Data_Extractor:
+class DataExtractor:
+    """Extracts the historic CO2-Ampeldatensatz and converts the files into a single dataframe."""
 
-    def __init__(self, first_directory, directory):
+    def __init__(self, first_directory, new_directory):
         self.first_directory = first_directory
-        self.directory = directory
+        self.new_directory = new_directory
 
 
     def create_df(self):
-        self.extract_zip_file(self.first_directory)
-        self.extract_zip_files(self.directory)
-        self.delete_zip_files(self.directory)
-        self.df = self.get_data(self.directory)
+        self.extract_zip_files(self.first_directory, self.new_directory)
+        self.delete_zip_files(self.first_directory)
+        self.df = self.get_data(self.new_directory)
 
         return self.df
-    
-    def extract_zip_file(self, directory):
-        try:
-            with zipfile.ZipFile(directory, 'r') as zip_ref:
-                zip_ref.extractall(directory)
-        except Exception as e:
-                print(e)
 
 
-    def extract_zip_files(self, directory):
-        """Extract all zip files in the parameter directory."""
-
-        for file_name in os.listdir(directory):
-            if file_name.endswith(".zip"):
-                try:
-                    path = os.path.join(directory, file_name)
-                    with zipfile.ZipFile(path, 'r') as zip_ref:
-                        zip_ref.extractall(directory)
-                        print(f"Extracted {file_name} in {directory}")
-                except Exception as e:
-                    print(e)
+    def extract_zip_files(self, directory, new_directory):
+        """Extract all zip and tar files in the parameter directory and its subdirectories."""
+        for root, _, files in os.walk(directory):
+            for file_name in files:
+                file_path = os.path.join(root, file_name)
+                if file_name.endswith(".zip"):
+                    try:
+                        with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                            zip_ref.extractall(new_directory)
+                            print(f"Extracted {file_name} in {new_directory}")
+                    except zipfile.BadZipFile as e:
+                        print(f"Failed to extract {file_name}: {e}")
+                elif file_name.endswith(".tar") or file_name.endswith(".tar.gz") or file_name.endswith(".tgz") or file_name.endswith(".tar.bz2"):
+                    try:
+                        with tarfile.open(file_path, 'r') as tar_ref:
+                            tar_ref.extractall(new_directory)
+                            print(f"Extracted {file_name} in {new_directory}")
+                    except tarfile.TarError as e:
+                        print(f"Failed to extract {file_name}: {e}")
 
 
     def delete_zip_files(self, directory):
-        """Delete all zip files in a directory"""
-        try:
-            for file_name in os.listdir(directory):
-                if file_name.endswith(".zip"):
-                    path = os.path.join(directory, file_name)
-                    os.remove(path)
-                    print(f"File {file_name} has been deleted.")
-        except Exception as e:
-            print(e)
-
-
-    def get_tar_files(self, path, df):
-        """A recursive function to extract the files from the tar folders. Each file contains the measurement 
-        of the so called 'CO2-Ampeln' (CO2 traffic lights) at a specific room at a specific day."""
-        folder_names = list()
-
-        # tar folders can not be accessed like usual folders. Instead, it is recommended to use a package like 'tarfile' to extract their information
-        if path.split(".")[-1] == "tar":
-            try:
-                # rename the folder in case it is a normal one but contains '.tar' anyway
-                os.listdir(path)
-                os.rename(path, path.replace(".tar", ""))
-                path = path.replace(".tar", "")
-            except:
-                i = 1
-                with tarfile.open(path, "r") as tar:
-                    df_list = []
-                    for file in tar.getmembers():
-                        # extract the DAT file
-                        dat_data = tar.extractfile(file)
-                
-                        # Read the DAT file into a pandas DataFrame
-                        # header = 1 to avoid a false format of the DataFrame
-                        # ";" is the separator letter
-                        try:
-                            df_new = pd.read_csv(io.BytesIO(dat_data.read()), delimiter=';', 
-                                                header = 1, encoding='unicode_escape', on_bad_lines='skip')
-                        except Exception as e:
-                            print(e)
-                            print("Error for file " + str(file))
-                            pass
-                        # store the information of each file in the dataframe 'df'
-                        df_list.append(df_new)
-                        
-                try:
-                    # merge the dataframes
-                    df_all_new = pd.concat(df_list, ignore_index = True)
-                    df = pd.concat([df, df_all_new], ignore_index = True)
-                except Exception as e:
-                    print(e)
-        else:
-            names = os.listdir(path)
-
-            for name in names:
-                # check for folder and file names
-                if len(name.split(".")[-1]) > 1:
-                    folder_names.append(name)
-
-            for folder in folder_names:
-                df = self.get_tar_files(path + f"/{folder}", df)
-
-        return df
+        """Delete all zip and tar files in a directory and its subdirectories."""
+        for root, _, files in os.walk(directory):
+            for file_name in files:
+                file_path = os.path.join(root, file_name)
+                if file_name.endswith((".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2")):
+                    try:
+                        os.remove(file_path)
+                        print(f"File {file_name} has been deleted.")
+                    except Exception as e:
+                        print(f"Failed to delete {file_name}: {e}")
 
 
     def get_data(self, directory):
-        """Open the tar files and put everything into a single dataframe."""
-        df = pd.DataFrame()
+        """Read all extracted .dat files into a pandas DataFrame."""
+        dataframes = []
+        for root, _, files in os.walk(directory):
+            for file_name in files:
+                file_path = os.path.join(root, file_name)
+                try:
+                    # Read the .dat file into a DataFrame
+                    df = pd.read_csv(file_path, delimiter=';', 
+                                    header = 1, encoding='unicode_escape', on_bad_lines='skip')
+                    dataframes.append(df)
+                except Exception as e:
+                    print(f"Failed to read {file_name} into DataFrame: {e}")
+                    continue
 
-        t = time.time()
-        building_names = list()
-
-        for name in os.listdir(directory):
-            building_names.append(name.split("-")[-1])
-            print(name)
-
-            df = self.get_tar_files(directory + f"/{name}", df)
-            print(round(time.time() - t, 2))
-
-        return df
+        # Concatenate all DataFrames into a single DataFrame
+        if dataframes:
+            print("Read data successfully.")
+            final_df = pd.concat(dataframes, ignore_index=True)
+            print(f"Data contains {final_df.shape[0]} data points and {final_df.shape[1]} columns.")
+            return final_df
+        else:
+            print(f"No .dat files found in {self.new_directory}. \n Trying to extract files from the original directory {self.first_directory}")
+            # in case there were no files to extract and no new directory has been created, try reading the data from the original first directory.
+            try:
+                return self.get_data(self.first_directory)
+            except:
+                print(f"No .dat files found in {self.first_directory}. Empty DataFrame returned.")
+                return pd.DataFrame()
+    
     
 
 
 
 
-class Data_Preprocessing:
+class DataPreprocessing:
 
         def __init__(self, get_outliers_out = True):
             self.get_outliers_out = get_outliers_out
