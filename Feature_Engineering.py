@@ -3,7 +3,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import numpy as np
 import pandas as pd
 
-class RoomClassificationFeatureEngineering:
+class FeatureEngineering:
     """Feature engineering for the use case 'Room classification'. Here, an already preprocessed dataframe is modified further to prepare it for Machine Learning models.
        The taken steps are not supposed to be identical to the feature engineering for the use case 'Prediction of persons in a given room'.
     """
