@@ -119,7 +119,7 @@ class FeatureEngineering:
 
         for feature in x.columns:
             # ignore binary features or columns which are not int or float
-            if x[feature].nunique() > 2 and (np.issubdtype(x[feature].dtype, np.floating) or np.issubdtype(x[feature].dtype, np.integer)):
+            if (np.issubdtype(x[feature].dtype, np.floating) or np.issubdtype(x[feature].dtype, np.integer)):
                 if feature not in non_numerical_features:
                     numerical_features.append(feature)
 
