@@ -23,11 +23,8 @@ class FeatureEngineering:
                 self.df = self.df.set_index("date_time")
 
             # remove features which are not helpful for the ML prediction
-            self.df = self.df.drop(columns = ["rssi", "snr", "building_name", "time_diff_sec"], axis = 1)
-
-            # remove 'building_name' if the data contains rooms from only one building
-            if "building_name" in self.df.columns and self.df.building_name.nunique() <= 1:
-                self.df = self.df.drop(["building_name"], axis = 1)
+            self.df = self.df.drop(columns = ["rssi", "snr", "time_diff_sec"], axis = 1)
+            
         except Exception as e:
             print(e)
             pass
@@ -106,7 +103,7 @@ class FeatureEngineering:
             return self.df
     
 
-    def scale_values(self, x, scaler, test:bool, non_numerical_features:list = ["hour", "month", "dayofweek", "year", "second", "minute"]):
+    def scale_values(self, x, scaler, test:bool, non_numerical_features:list = ["hour", "season", "dayofweek", "year", "second", "minute"]):
         """Scale numerical features into the same value range. Ignores non-numerical features and binary encoded columns which are the result of onehotencoding.
         
         Args:

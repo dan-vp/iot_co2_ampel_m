@@ -141,6 +141,7 @@ class DataPreprocessing:
 
         df = self.drop_na_rows(df)
         df = self.convert_features(df)
+        df = self.add_weather_data(df)
         df = self.extract_room(df)
         df = self.remove_duplicates(df)
         df = self.remove_features(df)
@@ -210,6 +211,23 @@ class DataPreprocessing:
             except Exception as e:
                 print(e)
                 pass
+
+        return df
+    
+
+    def add_weather_data(self, df):
+        df_weather = pd.read_csv("wetterdaten_karlsruhe.csv")
+        df_weather = df_weather.drop(columns = ["snow", "tsun"], axis = 1)
+
+        df_weather = self.drop_na_rows(df_weather)
+        df_weather = df_weather.fillna(0)
+
+        df_weather["date"] = pd.to_datetime(df_weather["date"])
+        df["date_time"] = pd.to_datetime(df["date_time"])
+
+        df = pd.merge_asof(df.sort_values("date_time"), df_weather, left_on = "date_time", right_on = "date", direction = "nearest")
+
+        df.drop(columns = ["date"], inplace = True)
 
         return df
     
@@ -356,7 +374,7 @@ class DataPreprocessing:
 
             room_df = df_sorted[df_sorted.room_number == room]
 
-            numerical_features = ["tmp","hum","CO2","VOC","vis","IR", "BLE", 'rssi', "snr"]
+            numerical_features = ["tmp","hum","CO2","VOC","vis","IR", "BLE", 'rssi', "snr", 'tavg', 'tmin', 'tmax', 'prcp', 'wdir', 'wspd', 'wpgt', 'pres']
 
             room_df = room_df.set_index(self.date_time_column)
 
@@ -459,9 +477,16 @@ class DataPreprocessing:
 
         # we treat the year 2022 as 1, year 2023 as 2 etc.
         df.loc[:, "year"] = df[self.date_time_column].dt.year - 2021
-        df.loc[:, "month"] = df[self.date_time_column].dt.month
         df.loc[:, "dayofweek"] = df[self.date_time_column].dt.dayofweek
         df.loc[:, "hour"] = df[self.date_time_column].dt.hour
+
+        df.loc[:, "month"] = df[self.date_time_column].dt.month
+        df.loc[df.month.isin([1,2,12]), "season"] = "winter"
+        df.loc[df.month.isin([3,4,5]), "season"] = "spring"
+        df.loc[df.month.isin([6,7,8]), "season"] = "summer"
+        df.loc[df.month.isin([9,10,11]), "season"] = "fall"
+
+        df.drop(columns = "month", axis = 1, inplace = True)
 
         # according to https://www.h-ka.de/fileadmin/Hochschule_Karlsruhe_HKA/Bilder_VW-EBI/HKA_VW-EBI_Anleitung_CO2-Ampeln.pdf
         # due to simplicity, we treat every value under 850 as green, as the CO2 value declines from 850 to 700 rapidly anyway.
