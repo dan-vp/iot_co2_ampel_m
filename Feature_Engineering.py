@@ -1,5 +1,5 @@
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 import numpy as np
 import pandas as pd
 
@@ -8,7 +8,7 @@ class FeatureEngineering:
        The taken steps are not supposed to be identical to the feature engineering for the use case 'Prediction of persons in a given room'.
     """
 
-    def __init__(self, df, categorical_features:list = [], label:str = "room_number", automated_feature_engineering:bool = True):
+    def __init__(self, df, categorical_features:list = [], label:str = "tmp", automated_feature_engineering:bool = True):
 
         self.sc = StandardScaler()
         self.df = df
@@ -18,25 +18,39 @@ class FeatureEngineering:
         try:
             # sort the data by the time frame they were measured at
             self.df = df.sort_values(["date_time"])
-            self.df = self.df.set_index("date_time")
+
+            if "date_time" in df.columns:
+                self.df = self.df.set_index("date_time")
 
             # remove features which are not helpful for the ML prediction
-            self.df = self.df.drop(columns = ["rssi", "snr", "time_diff_sec"], axis = 1)
+            self.df = self.df.drop(columns = ["rssi", "snr", "building_name", "time_diff_sec"], axis = 1)
 
+            # remove 'building_name' if the data contains rooms from only one building
+            if "building_name" in self.df.columns and self.df.building_name.nunique() <= 1:
+                self.df = self.df.drop(["building_name"], axis = 1)
         except Exception as e:
             print(e)
             pass
 
         if automated_feature_engineering:
-            self.X_train, self.X_test, self.y_train, self.y_test = self.feature_engineering_room_classification(categorical_features = categorical_features, label = label)
+            self.X_train, self.X_test, self.y_train, self.y_test = self.feature_engineering()
 
     
-    def feature_engineering_room_classification(self, categorical_features, label = "room_number"):
-        """Perform feature engineering by calling the other class methods of this class."""
+    def feature_engineering(self):
+        """Perform feature engineering by calling the other class methods of this class.
+        
+        Returns:
+            :all_X_train (pd.DataFrame): features of the training data.
+            :all_X_test (pd.DataFrame): features of the test data.
+            :all_y_train (np.Series): labels of the training data.
+            :all_y_test (np.Series): labels of the test data.       
+        """
 
-        self.df = self.onehotencoding(categorical_features)
+        self.df = self.onehotencoding(self.categorical_features)
 
-        self.X_train, self.X_test, self.y_train, self.y_test = self.train_test_split_for_every_label_value(self.df)
+        x,y = self.split_features_and_labels(self.df, y_col = self.label)
+
+        self.X_train, self.X_test, self.y_train, self.y_test = self.train_test_split_time_series(x, y)
 
         self.X_train = self.scale_values(self.X_train, self.sc, test = False)
         self.X_test = self.scale_values(self.X_test, self.sc, test = True)
@@ -45,7 +59,16 @@ class FeatureEngineering:
 
     
     def split_features_and_labels(self, df:pd.DataFrame, y_col:str):
-        """Separate featurs and a given label (expects the name of the label)."""
+        """Separate featurs and a given label (expects the name of the label).
+        
+        Args:
+            :df (pandas.DataFrame): DataFrame object with the data.
+            :y_col (str): name of the label in df.
+        
+        Returns:
+            :x (pd.DataFrame): feature data.
+            :y (pd.DataFrame): label data.
+        """
         y = df[y_col]
         x = df.drop(columns = [y_col], axis = 1)
 
@@ -54,7 +77,14 @@ class FeatureEngineering:
     
     def onehotencoding(self, categorical_features:list):
         """Convert categorical features into numerical ones 
-        (e.g. color with values 'blue' or 'yellow' leads to two new columns: color_blue, color_yellow. Both with binary values)."""
+        (e.g. color with values 'blue' or 'yellow' leads to two new columns: color_blue, color_yellow. Both with binary values).
+        
+        Args:
+            :categorical_features (list): names of features in the data which include categorical features.
+        
+        Returns:
+            :df (pandas.DataFrame): DataFrame object with onehot encoded features.
+        """
 
         if len(categorical_features) >= 1:
             try:
@@ -76,8 +106,18 @@ class FeatureEngineering:
             return self.df
     
 
-    def scale_values(self, x, scaler, test:bool, non_numerical_features = ["hour", "month", "dayofweek", "year", "second", "minute"]):
-        """Scale numerical features into the same value range. Ignores non-numerical features and binary encoded columns which are the result of onehotencoding."""
+    def scale_values(self, x, scaler, test:bool, non_numerical_features:list = ["hour", "month", "dayofweek", "year", "second", "minute"]):
+        """Scale numerical features into the same value range. Ignores non-numerical features and binary encoded columns which are the result of onehotencoding.
+        
+        Args:
+            :x (pd.DataFrame): feature data.
+            :scaler (sklearn.preprocessing.StandardScaler): a StandardScaler object.
+            :test (bool): information, if x is train or test data.
+            :non_numerical_features (list): features which should not be scaled.
+
+        Returns:
+            :x_scaled (pd.DataFrame): scaled feature data.
+        """
         numerical_features = list()
 
         for feature in x.columns:
@@ -103,20 +143,34 @@ class FeatureEngineering:
 
     
 
-    def train_test_split_time_series(self, x_scaled, y, n_splits = 3, test_size = 0.2):
-        """Perform a train or test split using a TimeSeriesSplit class from sklearn."""
-        assert x_scaled.shape[0] > 100
+    def train_test_split_time_series(self, x, y, n_splits = 3, test_size = 0.2):
+        """Perform a train or test split using a TimeSeriesSplit class from sklearn. https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html.
+        
+        Args:
+            :x (pd.DataFrame): feature data.
+            :y (np.Series): label data.
+            :n_splits (int): amount of splits 
+            :test_size (float): relative amount of the data which is supposed to be test data.
+
+        Returns:
+            :X_train (pd.DataFrame): features of the training data.
+            :X_test (pd.DataFrame): features of the test data.
+            :y_train (np.Series): labels of the training data.
+            :y_test (np.Series): labels of the test data.      
+
+        """
+        assert x.shape[0] > 100
 
         try:
             self.ts = TimeSeriesSplit(
                 n_splits = n_splits,
-                gap = int(x_scaled.shape[0] * 0.0001),
-                max_train_size = int(x_scaled.shape[0] * (1 - test_size) ),
-                test_size = int(x_scaled.shape[0] * test_size),
+                gap = int(x.shape[0] * 0.0001),
+                max_train_size = int(x.shape[0] * (1 - test_size) ),
+                test_size = int(x.shape[0] * test_size),
             )
 
-            for train_index, test_index in self.ts.split(x_scaled):
-                X_train, X_test = x_scaled.iloc[train_index, :], x_scaled.iloc[test_index,:]
+            for train_index, test_index in self.ts.split(x):
+                X_train, X_test = x.iloc[train_index, :], x.iloc[test_index,:]
                 y_train, y_test = y.iloc[train_index], y.iloc[test_index]
 
             return X_train, X_test, y_train, y_test
@@ -125,26 +179,19 @@ class FeatureEngineering:
             print(e)
 
             if n_splits > 2:
-                return self.train_test_split_time_series(x_scaled, y = y, n_splits = int(n_splits - 1), test_size = test_size)
-            
-
-    def train_test_split_for_every_label_value(self, df:pd.DataFrame):
-        """Separate the data depending on their label values and then perform a train-test-split. This will avoid an inbalance of certain label values in the train and test data.
-
-            For example, if a label 'amount_of_persons' with the value '10' might first appear at a very late date in a given time series dataset. A usual train-test-split would put all
-            the values containing rows with the label value '10' to the test data set.         
-        """
-
-        y = df[self.label]
-        x = df.drop(self.label, axis = 1)
-
-        X_train, X_test, y_train, y_test = self.train_test_split_time_series(x, y)
-
-        return X_train, X_test, y_train, y_test
+                return self.train_test_split_time_series(x, y = y, n_splits = int(n_splits - 1), test_size = test_size)
             
 
     def show_train_test_distribution(self, y_train, y_test):
-        """Shows the amount of data points in a train and test data set."""
+        """Shows the amount of data points in a train and test data set.
+        
+        Args:
+            :y_train (np.Series): labels of the training data.
+            :y_test (np.Series): labels of the test data.
+
+        Returns:
+            :tr_te (pd.DataFrame): DataFrame object containing the amounts of train and test data points for each unique label value.
+        """
 
         tr_te = pd.DataFrame([y_train.groupby(y_train.values).count(), y_test.groupby(y_test.values).count()]).T
 
