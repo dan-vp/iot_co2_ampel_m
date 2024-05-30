@@ -141,7 +141,7 @@ class DataPreprocessing:
 
         df = self.drop_na_rows(df)
         df = self.convert_features(df)
-        df = self.extract_room_and_building(df)
+        df = self.extract_room(df)
         df = self.remove_duplicates(df)
         df = self.remove_features(df)
         df = self.remove_invalid_values(df)
@@ -285,7 +285,8 @@ class DataPreprocessing:
         df = df[df.hum <= 100]
         # temperature is measured in °C. Therefore, we assume there can't be room temperatures above 50°C.
         # this filter method might have to be reevaluated in case of fire outbreaks
-        df = df[df.tmp <= 50]
+        df = df[(df.tmp <= 50) & (df.tmp >= 10)]
+
 
         # VOC is usually around the same or at at most 6 times higher than the CO2 value. Some outliers indiciate a ratio of 156:1, which is certainly wrong.
         df = df[(df.VOC/df.CO2) < 10]
