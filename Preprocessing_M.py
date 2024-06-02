@@ -425,7 +425,7 @@ class DataPreprocessing:
 
         # Iterate over each group
         # create new features which show the value changes compared to the previous data point
-        numerical_features = ["tmp", "hum", "CO2", "VOC", "vis", "IR", "BLE", "vis"]
+        numerical_features = ["tmp", "hum", "CO2", "VOC", "vis", "IR", "BLE", "vis", 'tavg', 'tmin', 'tmax', 'prcp', 'wdir', 'wspd', 'wpgt', 'pres']
         try:
             numerical_features.remove(self.label)
         except:
