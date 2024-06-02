@@ -109,15 +109,17 @@ class DataExtractor:
 class DataPreprocessing:
     """Performs data preprocessing on the CO2-Ampeldaten."""
 
-    def __init__(self, get_outliers_out = True, roll:bool = True, date_time_column:str = "date_time"):
+    def __init__(self, get_outliers_out = True, roll:bool = True, label:str = "tmp", date_time_column:str = "date_time"):
         """
         Args
             :get_outliers_out (bool): remove outliers if True, otherwise don't.
             :roll (bool): create rolling windows on the data if True, otherwise don't.
+            :label (str): name of the label in the data.
             :date_time_column (str): the column name in the data which contains the date time information.
         """
         self.get_outliers_out = get_outliers_out
         self.roll = roll
+        self.label = label
         self.date_time_column = date_time_column
 
 
@@ -423,7 +425,13 @@ class DataPreprocessing:
 
         # Iterate over each group
         # create new features which show the value changes compared to the previous data point
-        for feature in ["tmp", "hum", "CO2", "VOC", "vis", "IR", "BLE", "vis"]:
+        numerical_features = ["tmp", "hum", "CO2", "VOC", "vis", "IR", "BLE", "vis"]
+        try:
+            numerical_features.remove(self.label)
+        except:
+            pass
+
+        for feature in numerical_features:
                 df[f"{feature}_diff"] = df.groupby('room_number')[feature].diff()
 
         # fill 0 in case there is a division through zero
@@ -435,8 +443,9 @@ class DataPreprocessing:
     def create_average_differentials(self, df):
         """Calculate the average differentials per second for CO2, VOC, tmp, hum, IR and vis."""
 
-        for feature in ["CO2_diff", "VOC_diff", "tmp_diff", "hum_diff", "IR_diff", "vis_diff"]:
-                df[f"{feature}_per_sec"] = df[feature].div(df["time_diff_sec"])
+        for feature in df.columns:
+                if "_diff" in feature:
+                    df[f"{feature}_per_sec"] = df[feature].div(df["time_diff_sec"])
 
         df = df.replace([np.inf, -np.inf], 0)
 
