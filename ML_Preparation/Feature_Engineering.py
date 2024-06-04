@@ -33,8 +33,11 @@ class FeatureEngineering:
             self.X_train, self.X_test, self.y_train, self.y_test = self.feature_engineering()
 
     
-    def feature_engineering(self):
+    def feature_engineering(self, skip_scale:bool = False):
         """Perform feature engineering by calling the other class methods of this class.
+
+        Arg:
+            :skip_scale (bool): skip scaling the values.
         
         Returns:
             :all_X_train (pd.DataFrame): features of the training data.
@@ -49,8 +52,9 @@ class FeatureEngineering:
 
         self.X_train, self.X_test, self.y_train, self.y_test = self.train_test_split_time_series(x, y)
 
-        self.X_train = self.scale_values(self.X_train, self.sc, test = False)
-        self.X_test = self.scale_values(self.X_test, self.sc, test = True)
+        if skip_scale == False:
+            self.X_train = self.scale_values(self.X_train, self.sc, test = False)
+            self.X_test = self.scale_values(self.X_test, self.sc, test = True)
 
         return self.X_train, self.X_test, self.y_train, self.y_test
 
