@@ -307,6 +307,9 @@ class DataPreprocessing:
         # this filter method might have to be reevaluated in case of fire outbreaks
         df = df[(df.tmp <= 50) & (df.tmp >= 10)]
 
+        # there's a lot of data points where VOC stays constantly at 450
+        #df = df[df.VOC != 450]
+
 
         # VOC is usually around the same or at at most 6 times higher than the CO2 value. Some outliers indiciate a ratio of 156:1, which is certainly wrong.
         df = df[(df.VOC/df.CO2) < 10]
