@@ -216,7 +216,7 @@ class DataPreprocessing:
         return df
     
 
-    def remove_outliers(self, df, contamination:float = 0.1):
+    def remove_outliers(self, df, contamination:float = 0.075):
             """Entferne Ausreißer mit einem Isolation Forest.
         
         Args:

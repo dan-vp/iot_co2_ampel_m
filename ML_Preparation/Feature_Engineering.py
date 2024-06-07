@@ -8,7 +8,9 @@ class FeatureEngineering:
        The taken steps are not supposed to be identical to the feature engineering for the use case 'Prediction of persons in a given room'.
     """
 
-    def __init__(self, df, categorical_features:list = [], label:str = "tmp", automated_feature_engineering:bool = True):
+    def __init__(self, df, categorical_features:list = [], label:str = "tmp", 
+                 skip_scale:bool = False,
+                 automated_feature_engineering:bool = True):
 
         self.sc = StandardScaler()
         self.df = df
@@ -30,10 +32,10 @@ class FeatureEngineering:
             pass
 
         if automated_feature_engineering:
-            self.X_train, self.X_test, self.y_train, self.y_test = self.feature_engineering()
+            self.X_train, self.X_test, self.y_train, self.y_test = self.feature_engineering(skip_scale = skip_scale)
 
     
-    def feature_engineering(self):
+    def feature_engineering(self, skip_scale:bool = False):
         """Perform feature engineering by calling the other class methods of this class.
         
         Returns:
