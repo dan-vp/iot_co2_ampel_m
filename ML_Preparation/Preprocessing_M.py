@@ -333,13 +333,6 @@ class DataPreprocessing:
         # this filter method might have to be reevaluated in case of fire outbreaks
         df = df[(df.tmp <= 50) & (df.tmp >= 10)]
 
-        # there's a lot of data points where VOC stays constantly at 450
-        #df = df[df.VOC != 450]
-
-
-        # VOC is usually around the same or at at most 6 times higher than the CO2 value. Some outliers indiciate a ratio of 156:1, which is certainly wrong.
-        df = df[(df.VOC/df.CO2) < 10]
-
         # remove data points with suspicious large value changes in VOC and CO2 over a short period of time (60 seconds)
         too_fast_VOC_rise = (df.VOC.diff() >= 1000) & (df[self.date_time_column].diff().dt.seconds < 60)
         too_fast_CO2_rise = (df.CO2.diff() >= 1000) & (df[self.date_time_column].diff().dt.seconds < 60)
