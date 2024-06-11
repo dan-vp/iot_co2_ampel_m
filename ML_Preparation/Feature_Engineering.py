@@ -25,7 +25,7 @@ class FeatureEngineering:
                 self.df = self.df.set_index("date_time")
 
             # remove features which are not helpful for the ML prediction
-            self.df = self.df.drop(columns = ["rssi", "snr", "time_diff_sec"], axis = 1)
+            self.df = self.df.drop(columns = ["time_diff_sec"], axis = 1)
             
         except Exception as e:
             print(e)
@@ -88,7 +88,7 @@ class FeatureEngineering:
         if len(categorical_features) >= 1:
             try:
                 for ohe_feature in categorical_features:
-                    ohe_df = pd.get_dummies(self.df[f"{ohe_feature}"], prefix = f"{ohe_feature}")
+                    ohe_df = pd.get_dummies(self.df[f"{ohe_feature}"], prefix = f"{ohe_feature}", dtype = "int")
                     # add the new columns to the dataframe
                     self.df = pd.concat([self.df, ohe_df], axis = 1)
                     # drop the old column

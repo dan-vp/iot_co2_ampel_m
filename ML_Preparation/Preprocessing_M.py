@@ -305,7 +305,7 @@ class DataPreprocessing:
             :df (pandas.DataFrame): DataFrame object.
         """
 
-        columns = ["WIFI", "bandwidth", "channel_rssi", "channel_index", "device_id", "gateway", "f_cnt", "spreading_factor"]
+        columns = ["WIFI", "bandwidth", "channel_rssi", "channel_index", "device_id", "gateway", "f_cnt", "spreading_factor", 'rssi', "snr"]
 
         for col in columns:
             # iterate in case only some of those features are in the dataframe
@@ -375,7 +375,7 @@ class DataPreprocessing:
 
             room_df = df_sorted[df_sorted.room_number == room]
 
-            numerical_features = ["tmp","hum","CO2","VOC","vis","IR", "BLE", 'rssi', "snr", 'tavg', 'tmin', 'tmax', 'prcp', 'wdir', 'wspd', 'wpgt', 'pres']
+            numerical_features = ["tmp","hum","CO2","VOC","vis","IR", "BLE", 'tavg', 'tmin', 'tmax', 'prcp', 'wdir', 'wspd', 'wpgt', 'pres']
 
             room_df = room_df.set_index(self.date_time_column)
 
