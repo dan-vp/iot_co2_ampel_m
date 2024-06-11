@@ -2,7 +2,7 @@ import os, io
 import pandas as pd
 import tarfile, zipfile
 import numpy as np
-import time
+from sklearn.ensemble import IsolationForest
 pd.options.mode.chained_assignment = None  # default='warn'
 
 
@@ -143,18 +143,17 @@ class DataPreprocessing:
 
         df = self.drop_na_rows(df)
         df = self.convert_features(df)
+
+        if self.get_outliers_out:
+            df = self.remove_outliers(df)
+
         df = self.add_weather_data(df)
         df = self.extract_room(df)
         df = self.remove_duplicates(df)
         df = self.remove_features(df)
         df = self.remove_invalid_values(df)
-
-        if self.get_outliers_out:
-            df = self.remove_outliers(df)
-
         df = self.create_rolling_windows(df, rolling_window = rolling_window, sample_time = sample_time)
         df = self.create_time_diff_features(df)
-        df = self.create_average_differentials(df)
         df = self.create_new_features(df)
         df = self.fill_na(df)
 
@@ -215,6 +214,33 @@ class DataPreprocessing:
                 pass
 
         return df
+    
+
+    def remove_outliers(self, df, contamination:float = 0.075):
+            """Entferne Ausreißer mit einem Isolation Forest.
+        
+        Args:
+            df (pandas.DataFrame): DataFrame Objekt.
+            contamination (float): relativer Anteil des Datensatzes, der als Ausreißer entfernt werden soll.
+
+        Returns:
+            df (pandas.DataFrame): DataFrame Objekt.
+        """
+
+            # n_estimators: wie viele Bäume sollen genutzt werden?
+            # contamination: welcher relativer Anteil des Datensatzes soll als Ausreißer detektiert werden?
+            # max_samples: mit wie vielen Datenpunkten soll der IsolationForest trainiert werden?
+            isoforest = IsolationForest(n_estimators = 100, contamination = contamination, max_samples = int(df.shape[0]*0.8))
+            # Isolation Forest auf den wichtigsten numerischen Werten durchführen (CO2, tmp, vis, hum und VOC).
+            prediction = isoforest.fit_predict(df[["CO2", "tmp", "vis", "hum", "VOC"]])
+            print("Number of outliers detected: {}".format(prediction[prediction < 0].sum()))
+            print("Number of normal samples detected: {}".format(prediction[prediction >= 0].sum()))
+            score = isoforest.decision_function(df[["CO2", "tmp", "vis", "hum", "VOC"]])
+            df["anomaly_score"] = score
+            # Zeilen mit anomaly_score < 0 werden vom Isolation Forest als Ausreißer interpretiert.
+            df = df[df.anomaly_score >= 0]
+
+            return df
     
 
     def add_weather_data(self, df):
@@ -279,7 +305,7 @@ class DataPreprocessing:
             :df (pandas.DataFrame): DataFrame object.
         """
 
-        columns = ["WIFI", "bandwidth", "channel_rssi", "channel_index", "device_id", "gateway", "f_cnt", "spreading_factor"]
+        columns = ["WIFI", "bandwidth", "channel_rssi", "channel_index", "device_id", "gateway", "f_cnt", "spreading_factor", 'rssi', "snr"]
 
         for col in columns:
             # iterate in case only some of those features are in the dataframe
@@ -307,13 +333,6 @@ class DataPreprocessing:
         # this filter method might have to be reevaluated in case of fire outbreaks
         df = df[(df.tmp <= 50) & (df.tmp >= 10)]
 
-        # there's a lot of data points where VOC stays constantly at 450
-        #df = df[df.VOC != 450]
-
-
-        # VOC is usually around the same or at at most 6 times higher than the CO2 value. Some outliers indiciate a ratio of 156:1, which is certainly wrong.
-        df = df[(df.VOC/df.CO2) < 10]
-
         # remove data points with suspicious large value changes in VOC and CO2 over a short period of time (60 seconds)
         too_fast_VOC_rise = (df.VOC.diff() >= 1000) & (df[self.date_time_column].diff().dt.seconds < 60)
         too_fast_CO2_rise = (df.CO2.diff() >= 1000) & (df[self.date_time_column].diff().dt.seconds < 60)
@@ -335,29 +354,6 @@ class DataPreprocessing:
         df.reset_index(drop = True, inplace = True)
 
         return df
-
-
-    def remove_outliers(self, df):
-            """Remove outliers for CO2 and VOC.
-        
-        Args:
-            :df (pandas.DataFrame): DataFrame object.
-
-        Returns:
-            :df (pandas.DataFrame): DataFrame object.
-        """
-
-            for feature in ["CO2", "VOC"]:
-                    threshold = df[feature].mean() + 4*df[feature].std()
-                    df = df[df[feature].abs() <= threshold]
-
-            df.reset_index(drop = True, inplace = True)
-
-            # since outliers (data points) were removed, the measured differences of variable changes between time points of a specific room are not accurate. They have to be calculated again.
-            # The differences were required to estimate invalid values or outliers. Thus it has been implemented this way.
-            df = self.create_time_diff_features(df)
-
-            return df
     
     
     def create_rolling_windows(self, df, rolling_window, sample_time = "1h"):
@@ -379,7 +375,7 @@ class DataPreprocessing:
 
             room_df = df_sorted[df_sorted.room_number == room]
 
-            numerical_features = ["tmp","hum","CO2","VOC","vis","IR", "BLE", 'rssi', "snr", 'tavg', 'tmin', 'tmax', 'prcp', 'wdir', 'wspd', 'wpgt', 'pres']
+            numerical_features = ["tmp","hum","CO2","VOC","vis","IR", "BLE", 'tavg', 'tmin', 'tmax', 'prcp', 'wdir', 'wspd', 'wpgt', 'pres']
 
             room_df = room_df.set_index(self.date_time_column)
 
@@ -441,19 +437,7 @@ class DataPreprocessing:
         df = df.replace([np.inf, -np.inf], 0)
 
         return df
-
     
-    def create_average_differentials(self, df):
-        """Calculate the average differentials per second for CO2, VOC, tmp, hum, IR and vis."""
-
-        for feature in df.columns:
-                if "_diff" in feature:
-                    df[f"{feature}_per_sec"] = df[feature].div(df["time_diff_sec"])
-
-        df = df.replace([np.inf, -np.inf], 0)
-
-        return df
-
 
     def fill_na(self, df):
         """Handle missing values in the data.
