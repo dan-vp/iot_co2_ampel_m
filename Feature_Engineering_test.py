@@ -8,7 +8,9 @@ class FeatureEngineering:
        The taken steps are not supposed to be identical to the feature engineering for the use case 'Prediction of persons in a given room'.
     """
 
-    def __init__(self, df, categorical_features:list = [], label:str = "tmp", automated_feature_engineering:bool = True):
+    def __init__(self, df, categorical_features:list = [], label:str = "tmp", 
+                 skip_scale:bool = False,
+                 automated_feature_engineering:bool = True):
 
         self.sc = StandardScaler()
         self.df = df
@@ -23,21 +25,18 @@ class FeatureEngineering:
                 self.df = self.df.set_index("date_time")
 
             # remove features which are not helpful for the ML prediction
-            self.df = self.df.drop(columns = ["rssi", "snr", "time_diff_sec"], axis = 1)
+            self.df = self.df.drop(columns = ["time_diff_sec"], axis = 1)
             
         except Exception as e:
             print(e)
             pass
 
         if automated_feature_engineering:
-            self.X_train, self.X_test, self.y_train, self.y_test = self.feature_engineering()
+            self.X_train, self.X_test, self.y_train, self.y_test = self.feature_engineering(skip_scale = skip_scale)
 
     
     def feature_engineering(self, skip_scale:bool = False):
         """Perform feature engineering by calling the other class methods of this class.
-
-        Arg:
-            :skip_scale (bool): skip scaling the values.
         
         Returns:
             :all_X_train (pd.DataFrame): features of the training data.
@@ -52,9 +51,8 @@ class FeatureEngineering:
 
         self.X_train, self.X_test, self.y_train, self.y_test = self.train_test_split_time_series(x, y)
 
-        if skip_scale == False:
-            self.X_train = self.scale_values(self.X_train, self.sc, test = False)
-            self.X_test = self.scale_values(self.X_test, self.sc, test = True)
+        self.X_train = self.scale_values(self.X_train, self.sc, test = False)
+        self.X_test = self.scale_values(self.X_test, self.sc, test = True)
 
         return self.X_train, self.X_test, self.y_train, self.y_test
 
@@ -90,7 +88,7 @@ class FeatureEngineering:
         if len(categorical_features) >= 1:
             try:
                 for ohe_feature in categorical_features:
-                    ohe_df = pd.get_dummies(self.df[f"{ohe_feature}"], prefix = f"{ohe_feature}")
+                    ohe_df = pd.get_dummies(self.df[f"{ohe_feature}"], prefix = f"{ohe_feature}", dtype = "int")
                     # add the new columns to the dataframe
                     self.df = pd.concat([self.df, ohe_df], axis = 1)
                     # drop the old column
