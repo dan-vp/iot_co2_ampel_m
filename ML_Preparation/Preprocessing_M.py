@@ -109,7 +109,7 @@ class DataExtractor:
 class DataPreprocessing:
     """Performs data preprocessing on the CO2-Ampeldaten."""
 
-    def __init__(self, get_outliers_out = True, roll:bool = True, label:str = "tmp", date_time_column:str = "date_time"):
+    def __init__(self, get_outliers_out = True, roll:bool = True, label:str = "CO2", date_time_column:str = "date_time"):
         """
         Args
             :get_outliers_out (bool): remove outliers if True, otherwise don't.
@@ -123,7 +123,7 @@ class DataPreprocessing:
         self.date_time_column = date_time_column
 
 
-    def preprocess_df(self, df, rolling_window:str, sample_time:str = "15min"):
+    def preprocess_df(self, df, rolling_window:str = "3d", sample_time:str = "1d"):
         """Overall method to perform the preprocessing steps for a given dataframe df.
 
         Args
@@ -239,6 +239,7 @@ class DataPreprocessing:
             df["anomaly_score"] = score
             # Zeilen mit anomaly_score < 0 werden vom Isolation Forest als Ausreißer interpretiert.
             df = df[df.anomaly_score >= 0]
+            df = df.drop(columns = ["anomaly_score"], axis = 1)
 
             return df
     
@@ -255,7 +256,7 @@ class DataPreprocessing:
 
         df = pd.merge_asof(df.sort_values("date_time"), df_weather, left_on = "date_time", right_on = "date", direction = "nearest")
 
-        df.drop(columns = ["date"], inplace = True)
+        df.drop(columns = ["date", "prcp"], inplace = True)
 
         return df
     
@@ -334,22 +335,38 @@ class DataPreprocessing:
         df = df[(df.tmp <= 50) & (df.tmp >= 10)]
 
         # remove data points with suspicious large value changes in VOC and CO2 over a short period of time (60 seconds)
-        too_fast_VOC_rise = (df.VOC.diff() >= 1000) & (df[self.date_time_column].diff().dt.seconds < 60)
-        too_fast_CO2_rise = (df.CO2.diff() >= 1000) & (df[self.date_time_column].diff().dt.seconds < 60)
+        if "VOC" in df.columns:
+            too_fast_VOC_rise = (df.VOC.diff() >= 1000) & (df[self.date_time_column].diff().dt.seconds < 60)
+            suspicious_rises = too_fast_VOC_rise
+        if "CO2" in df.columns:
+            too_fast_CO2_rise = (df.CO2.diff() >= 1000) & (df[self.date_time_column].diff().dt.seconds < 60)
+            suspicious_rises = too_fast_CO2_rise
 
-        # Combine conditions
-        suspicious_rises = too_fast_VOC_rise | too_fast_CO2_rise
+        # combine conditions
+        if "VOC" in df.columns and "CO2" in df.columns:
+            suspicious_rises = too_fast_VOC_rise | too_fast_CO2_rise
 
-        # Filter DataFrame
+        # filter DataFrame
         df = df[~suspicious_rises]
 
         
 
-        # The dataset contains data points with multiple zeroes. We assume they could result from false reading or resets of the sensor devices.
-        df = df[(df.CO2 != 0) & (df.VOC != 0) & (df.tmp != 0) & (df.hum != 0)]
-        # Thousands of data points include high inclines of the CO2 value while the other measured variables freeze (e.g. in some of them VOC stays at 450)
-        invalid_values = (df.CO2 > 20000) & (df.VOC.diff() == 0) & (df.VOC.diff() == 0) & (df.BLE.diff() == 0) & (df.tmp.diff() == 0)
-        df = df[invalid_values == False]
+        # the dataset contains data points with multiple zeroes. We assume they could result from false reading or resets of the sensor devices.
+        if self.label not in ["CO2", "VOC", "tmp", "hum"]:
+            df = df[(df.CO2 != 0) & (df.VOC != 0) & (df.tmp != 0) & (df.hum != 0)]
+            # thousands of data points include high inclines of the CO2 value while the other measured variables freeze (e.g. in some of them VOC stays at 450)
+            invalid_values = (df.CO2 > 20000) & (df.VOC.diff() == 0) & (df.VOC.diff() == 0) & (df.BLE.diff() == 0) & (df.tmp.diff() == 0)
+            df = df[invalid_values == False]
+        else:
+            for column in ["CO2", "VOC", "tmp", "hum"]:
+                if column in df.columns:
+                    df = df[df[column] != 0]
+
+                try:
+                    invalid_values = (df.CO2 > 20000) & (df.VOC.diff() == 0) & (df.VOC.diff() == 0) & (df.BLE.diff() == 0) & (df.tmp.diff() == 0)
+                    df = df[invalid_values == False]
+                except:
+                    pass
 
         df.reset_index(drop = True, inplace = True)
 
@@ -374,8 +391,8 @@ class DataPreprocessing:
         for room in df.room_number.unique():
 
             room_df = df_sorted[df_sorted.room_number == room]
-
-            numerical_features = ["tmp","hum","CO2","VOC","vis","IR", "BLE", 'tavg', 'tmin', 'tmax', 'prcp', 'wdir', 'wspd', 'wpgt', 'pres']
+            
+            numerical_features = [col for col in df.columns if (pd.api.types.is_integer_dtype(df[col])) or (pd.api.types.is_float_dtype(df[col]))]
 
             room_df = room_df.set_index(self.date_time_column)
 
@@ -420,11 +437,12 @@ class DataPreprocessing:
             df = df.reset_index()
 
         df = df.sort_values(by = [self.date_time_column])
-        df["time_diff_sec"] = df.groupby('room_number')[self.date_time_column].diff().dt.seconds
 
         # Iterate over each group
         # create new features which show the value changes compared to the previous data point
-        numerical_features = ["tmp", "hum", "CO2", "VOC", "vis", "IR", "BLE", "vis", 'tavg', 'tmin', 'tmax', 'prcp', 'wdir', 'wspd', 'wpgt', 'pres']
+        
+        numerical_features = [col for col in df.columns if (pd.api.types.is_integer_dtype(df[col])) or (pd.api.types.is_float_dtype(df[col]))]
+        
         try:
             numerical_features.remove(self.label)
         except:
@@ -487,10 +505,11 @@ class DataPreprocessing:
         # according to https://www.h-ka.de/fileadmin/Hochschule_Karlsruhe_HKA/Bilder_VW-EBI/HKA_VW-EBI_Anleitung_CO2-Ampeln.pdf
         # due to simplicity, we treat every value under 850 as green, as the CO2 value declines from 850 to 700 rapidly anyway.
 
-        df.loc[(df.CO2 < 850), "color"] = "green"
-        df.loc[(df.CO2 >= 850) & (df.CO2 < 1200), "color"] = "yellow"
-        df.loc[(df.CO2 >= 1200) & (df.CO2 < 1600), "color"] = "red"
-        df.loc[(df.CO2 >= 1600), "color"] = "red_blinking"
+       
+        # df.loc[(df.CO2 < 850), "color"] = "green"
+        # df.loc[(df.CO2 >= 850) & (df.CO2 < 1200), "color"] = "yellow"
+        # df.loc[(df.CO2 >= 1200) & (df.CO2 < 1600), "color"] = "red"
+        # df.loc[(df.CO2 >= 1600), "color"] = "red_blinking"
 
         # some rooms have different ratios between VOC and CO2.
         df["VOC_CO2_ratio"] = (df["VOC"]/df["CO2"]).round(4)
