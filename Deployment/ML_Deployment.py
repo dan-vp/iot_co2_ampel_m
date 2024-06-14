@@ -19,7 +19,7 @@ class Predictor:
         if is_forecast == False and label in self.df.columns:
             self.df = self.df.drop(columns = [label], axis = 1)
 
-        # df = df.reindex(columns = self.feature_engineerer.feature_columns)
+        self.df = self.df.set_index("date_time")
 
         self.x = self.feature_engineerer.feature_engineering(only_predict = True, x_for_prediction = self.df, scaler = scaler, steps_to_forecast = steps_to_forecast, skip_scale = True)
 
@@ -55,12 +55,13 @@ class Predictor:
 
 
         pred_df = pd.DataFrame(pred, columns = pred_columns)
-        pred_df.index = self.df.index
-        pred_df.index.name = "date_time"
 
         x = pd.DataFrame(x[:, 0, :], columns = self.feature_engineerer.columns_after_feature_engineering)
 
         # Create a new column by getting the column name for the max value in the one-hot encoded columns
         pred_df[prefix] = x[onehot_cols].idxmax(axis=1).str.replace(f'{prefix}_', '').str.replace("(t-1)", "")
+
+        pred_df.index = self.df.index
+        pred_df.index.name = "date_time"
 
         return pred_df
