@@ -84,7 +84,7 @@ class FeatureEngineering:
 
             train_reframed = self.transform_data_for_forecasting(df_train, self.label, input_time_steps, steps_to_forecast)
             test_reframed = self.transform_data_for_forecasting(df_test, self.label, input_time_steps, steps_to_forecast)
-            
+
             self.X_train, self.X_test, self.y_train, self.y_test = self.transform_to_numpy_array(train_reframed, test_reframed, steps_to_forecast)
             
             return self.X_train, self.X_test, self.y_train, self.y_test
@@ -103,6 +103,8 @@ class FeatureEngineering:
 
             if "date_time" in self.df.columns:
                 self.df = self.df.set_index("date_time")
+
+            self.df = self.transform_data_for_forecasting_without_label(self.df, input_time_steps)
 
             data_array = self.transform_to_numpy_array_without_label(self.df)
 
@@ -259,6 +261,9 @@ class FeatureEngineering:
         for i in range(input_time_steps, 0, -1):
             cols.append(data.shift(i))
             names += [('%s(t-%d)' % (col, i)) for col in data.columns]
+            
+        self.columns_after_feature_engineering = names
+
         # forecast sequence (t, t+1, ... t+n)
         for i in range(0, steps_to_forecast):
             cols.append(data[[f"{label_name}"]].shift(-i))
@@ -274,20 +279,40 @@ class FeatureEngineering:
                 data_reframed.dropna(inplace=True)
 
         return data_reframed
+    
+
+    def transform_data_for_forecasting_without_label(self, data, input_time_steps):
+
+        cols, names = list(), list()
+        # input sequence (t-n, ... t-1)
+        for i in range(input_time_steps, 0, -1):
+            cols.append(data.shift(i))
+            names += [('%s(t-%d)' % (col, i)) for col in data.columns]
+
+        data.columns = names
+
+        self.columns_after_feature_engineering = names
+
+        return data
+    
 
 
     def transform_to_numpy_array(self, train_data, test_data, steps_to_forecast):
         # split into train and test sets
-        train = train_data.values
-        test = test_data.values
 
-        train_X, train_y = train[:, :-steps_to_forecast], train[:, -steps_to_forecast:]
-        test_X, test_y = test[:, :-steps_to_forecast], test[:, -steps_to_forecast:]
+        train_X, train_y = train_data.iloc[:, :-steps_to_forecast], train_data.iloc[:, -steps_to_forecast:]
+        test_X, test_y = test_data.iloc[:, :-steps_to_forecast], test_data.iloc[:, -steps_to_forecast:]
 
-        self.sc = StandardScaler()
+        # self.sc = StandardScaler()
 
-        train_X = self.sc.fit_transform(train_X)
-        test_X = self.sc.transform(test_X)
+        # train_X = self.sc.fit_transform(train_X)
+        # test_X = self.sc.transform(test_X)
+
+        train_X = self.scale_values(x = train_X, test = False, scaler = self.sc)
+        test_X = self.scale_values(x = test_X, test = True, scaler = self.sc)
+
+        train_X = train_X.values
+        test_X = test_X.values
 
         # reshape input to be 3D [samples, timesteps, features]
         train_X = train_X.reshape((train_X.shape[0], 1, train_X.shape[1]))
@@ -306,9 +331,10 @@ class FeatureEngineering:
 
     def transform_to_numpy_array_without_label(self, data):
         # split into train and test sets
-        data = data.values
 
-        data_scaled = self.sc.transform(data)
+        data_scaled = self.scale_values(x = data, test = True, scaler = self.sc)
+
+        data_scaled = data_scaled.values
 
         # reshape input to be 3D [samples, timesteps, features]
         data_shaped = data_scaled.reshape((data_scaled.shape[0], 1, data_scaled.shape[1]))
