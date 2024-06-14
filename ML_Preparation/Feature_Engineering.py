@@ -23,9 +23,6 @@ class FeatureEngineering:
 
             if "date_time" in df.columns:
                 self.df = self.df.set_index("date_time")
-
-            # remove features which are not helpful for the ML prediction
-            self.df = self.df.drop(columns = ["time_diff_sec"], axis = 1)
             
         except Exception as e:
             print(e)
@@ -35,26 +32,81 @@ class FeatureEngineering:
             self.X_train, self.X_test, self.y_train, self.y_test = self.feature_engineering(skip_scale = skip_scale)
 
     
-    def feature_engineering(self, skip_scale:bool = False):
-        """Perform feature engineering by calling the other class methods of this class.
+    def feature_engineering(self, steps_to_forecast:int, input_time_steps:int = 1, skip_scale:bool = False, scaler = None, x_for_prediction:pd.DataFrame = None, only_predict:bool = False):
+        """Perform feature engineering by calling the other class methods of this class. Can be used for model training and simple predictions of data points.
+
+        Args:
+            steps_to_forecast (bool): amount of time steps to create as a label (value 2 --> two timesteps of a label value will be created --> two labels to predict)
+            input_time_steps (int): amount of time steps to use for feature data as an input. Default value set to 1.
+            only_predict (bool): perform no train-test-split if True. Default value set to False.
+            skip_scale (bool): do not scale data if True. Default value set to False.
+            scaler: scaler to use for scaling the values. If the input is invalid, the scaler of this class object will be used instead.
+            x_for_prediction (pd.DataFrame): feature data to predict during the deployment phase.
+            only_predict (bool): True to avoid any train-test-splits or feature-label splits. This should be set to True for data without a known label.
         
         Returns:
-            :all_X_train (pd.DataFrame): features of the training data.
-            :all_X_test (pd.DataFrame): features of the test data.
-            :all_y_train (np.Series): labels of the training data.
-            :all_y_test (np.Series): labels of the test data.       
+            if only_predict is set to False:
+                :all_X_train (np.array): features of the training data.
+                :all_X_test (np.array): features of the test data.
+                :all_y_train (np.array): labels of the training data.
+                :all_y_test (np.array): labels of the test data.
+
+            if only_predict is set to True:
+                :data_array (np.array): scaled features of the data shaped into a 3D-numpy array.
         """
 
-        self.df = self.onehotencoding(self.categorical_features)
+        if scaler == None:
+            scaler = self.sc
 
-        x,y = self.split_features_and_labels(self.df, y_col = self.label)
+        if only_predict == False:
+            self.df = self.df.sort_index(axis=1)
+            self.df = self.onehotencoding(self.categorical_features)
 
-        self.X_train, self.X_test, self.y_train, self.y_test = self.train_test_split_time_series(x, y)
+            # for the model training
+            x,y = self.split_features_and_labels(self.df, y_col = self.label)
+            self.X_train, self.X_test, self.y_train, self.y_test = self.train_test_split_time_series(x, y)
 
-        self.X_train = self.scale_values(self.X_train, self.sc, test = False)
-        self.X_test = self.scale_values(self.X_test, self.sc, test = True)
 
-        return self.X_train, self.X_test, self.y_train, self.y_test
+            if skip_scale == False:
+                try:
+                    self.X_train = self.scale_values(self.X_train, scaler, test = False)
+                    self.X_test = self.scale_values(self.X_test, scaler, test = True)
+                except:
+                    print("The scaler which the user has given as an input is invalid. Using scaler of this class object instead.")
+                    self.X_train = self.scale_values(self.X_train, self.sc, test = False)
+                    self.X_test = self.scale_values(self.X_test, self.sc, test = True)
+
+            df_train = self.X_train
+            df_train[self.label] = self.y_train
+
+            df_test = self.X_test
+            df_test[self.label] = self.y_test
+
+            train_reframed = self.transform_data_for_forecasting(df_train, self.label, input_time_steps, steps_to_forecast)
+            test_reframed = self.transform_data_for_forecasting(df_test, self.label, input_time_steps, steps_to_forecast)
+            
+            self.X_train, self.X_test, self.y_train, self.y_test = self.transform_to_numpy_array(train_reframed, test_reframed, steps_to_forecast)
+            
+            return self.X_train, self.X_test, self.y_train, self.y_test
+        
+        else:
+            # for the deployment (or simple predictions of data with unknown labels)
+            self.df = x_for_prediction.copy()
+            self.df = self.onehotencoding(self.categorical_features)
+            
+            if skip_scale == False:
+                try:
+                    self.df = self.scale_values(self.df, scaler, test = True)
+                except Exception as e:
+                    print("The scaler which the user has given as an input is invalid. Using scaler of this class object instead.")
+                    self.df = self.scale_values(self.df, self.sc, test = True)
+
+            if "date_time" in self.df.columns:
+                self.df = self.df.set_index("date_time")
+
+            data_array = self.transform_to_numpy_array_without_label(self.df)
+
+            return data_array
 
     
     def split_features_and_labels(self, df:pd.DataFrame, y_col:str):
@@ -105,38 +157,39 @@ class FeatureEngineering:
             return self.df
     
 
-    def scale_values(self, x, scaler, test:bool, non_numerical_features:list = ["hour", "season", "dayofweek", "year", "second", "minute"]):
+    def scale_values(self, x, scaler, test:bool):
         """Scale numerical features into the same value range. Ignores non-numerical features and binary encoded columns which are the result of onehotencoding.
         
         Args:
             :x (pd.DataFrame): feature data.
             :scaler (sklearn.preprocessing.StandardScaler): a StandardScaler object.
             :test (bool): information, if x is train or test data.
-            :non_numerical_features (list): features which should not be scaled.
 
         Returns:
             :x_scaled (pd.DataFrame): scaled feature data.
         """
-        numerical_features = list()
-
-        for feature in x.columns:
-            # ignore binary features or columns which are not int or float
-            if (np.issubdtype(x[feature].dtype, np.floating) or np.issubdtype(x[feature].dtype, np.integer)):
-                if feature not in non_numerical_features:
-                    numerical_features.append(feature)
 
         if test:
-            scaled_numerical_features = scaler.transform(x[numerical_features])
+            scaled_numerical_features = scaler.transform(x[self.feature_order_for_scaler])
         else:
-            scaled_numerical_features = scaler.fit_transform(x[numerical_features])
+            numerical_features = list()
 
-        scaled_numerical_features = pd.DataFrame(scaled_numerical_features, columns = numerical_features)
+            for feature in x.columns:
+                # ignore binary features or columns which are not int or float
+                if (pd.api.types.is_integer_dtype(x[feature])) or (pd.api.types.is_float_dtype(x[feature])):
+                    if set(x[feature].unique()).issubset({0, 1}) == False:
+                        numerical_features.append(feature)
+                        
+            self.feature_order_for_scaler = numerical_features
+            scaled_numerical_features = scaler.fit_transform(x[self.feature_order_for_scaler])
+
+        scaled_numerical_features = pd.DataFrame(scaled_numerical_features, columns = self.feature_order_for_scaler)
         scaled_numerical_features = scaled_numerical_features.fillna(0)
 
         scaled_numerical_features.index = x.index
         # x_scaled keeps the non-numerical columns. Reunify it with the now scaled numerical columns
-        x_scaled = x.drop(columns=numerical_features, axis=1)
-        x_scaled = pd.concat([x_scaled, scaled_numerical_features], axis=1)
+        x_to_be_scaled = x.drop(columns=self.feature_order_for_scaler, axis=1)
+        x_scaled = pd.concat([x_to_be_scaled, scaled_numerical_features], axis=1)
 
         return x_scaled
 
@@ -197,3 +250,69 @@ class FeatureEngineering:
         tr_te.columns = ["freq_in_train_data", "freq_in_test_data"]
 
         return tr_te
+    
+
+    def transform_data_for_forecasting(self, data, label_name, input_time_steps, steps_to_forecast, dropna = True):
+
+        cols, names = list(), list()
+        # input sequence (t-n, ... t-1)
+        for i in range(input_time_steps, 0, -1):
+            cols.append(data.shift(i))
+            names += [('%s(t-%d)' % (col, i)) for col in data.columns]
+        # forecast sequence (t, t+1, ... t+n)
+        for i in range(0, steps_to_forecast):
+            cols.append(data[[f"{label_name}"]].shift(-i))
+            if i == 0:
+                names += [f"{label_name}(t)"]
+            else:
+                names += [f"{label_name}(t+{i})"]
+            # put it all together
+            data_reframed = pd.concat(cols, axis=1)
+            data_reframed.columns = names
+            # drop rows with NaN values
+            if dropna:
+                data_reframed.dropna(inplace=True)
+
+        return data_reframed
+
+
+    def transform_to_numpy_array(self, train_data, test_data, steps_to_forecast):
+        # split into train and test sets
+        train = train_data.values
+        test = test_data.values
+
+        train_X, train_y = train[:, :-steps_to_forecast], train[:, -steps_to_forecast:]
+        test_X, test_y = test[:, :-steps_to_forecast], test[:, -steps_to_forecast:]
+
+        self.sc = StandardScaler()
+
+        train_X = self.sc.fit_transform(train_X)
+        test_X = self.sc.transform(test_X)
+
+        # reshape input to be 3D [samples, timesteps, features]
+        train_X = train_X.reshape((train_X.shape[0], 1, train_X.shape[1]))
+        test_X = test_X.reshape((test_X.shape[0], 1, test_X.shape[1]))
+        
+        #print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)
+
+        train_X = np.asarray(train_X).astype('float32')
+        train_y = np.asarray(train_y).astype('float32')
+
+        test_X = np.asarray(test_X).astype('float32')
+        test_y = np.asarray(test_y).astype('float32')
+
+        return train_X, test_X, train_y, test_y
+    
+
+    def transform_to_numpy_array_without_label(self, data):
+        # split into train and test sets
+        data = data.values
+
+        data_scaled = self.sc.transform(data)
+
+        # reshape input to be 3D [samples, timesteps, features]
+        data_shaped = data_scaled.reshape((data_scaled.shape[0], 1, data_scaled.shape[1]))
+
+        data_array = np.asarray(data_shaped).astype('float32')
+
+        return data_array
