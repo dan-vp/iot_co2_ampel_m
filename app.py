@@ -46,7 +46,8 @@ app.layout = html.Div(
                                                       className='sensordataselector'
                                                       ),
                                      ],
-                                     style={'color': '#1E1E1E'})
+                                     style={'color': '#1E1E1E'}),
+                                 html.Div(id='input-warning')
                                 ]
                              ),
                     html.Div(className='eight columns div-for-charts bg-grey',
