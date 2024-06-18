@@ -1,13 +1,26 @@
 import dash
-import dash_html_components as html
-import dash_core_components as dcc
+# import dash_html_components as html
+# import dash_core_components as dcc
+from dash import html, dcc
 from dash.dependencies import Input, Output
 import plotly.graph_objects as go
 import pandas as pd
 from plotly.subplots import make_subplots
+from Preprocessing_M import DataExtractor, DataPreprocessing
+from nbimporter import NotebookLoader
+import numpy as np
 
 # Load data
-df = pd.read_parquet("../Gebäude_M_Analysis/Preprocessed_M_Data.parquet")
+# df = pd.read_parquet("../Gebäude_M_Analysis/Preprocessed_M_Data.parquet")
+df = pd.read_parquet("dashboard_data/eda_lenni.parquet")
+
+loader = NotebookLoader()
+notebook = loader.load_module('exploratory_data_analysis_dashboard')
+remove_outliers = notebook.remove_outliers
+resample = notebook.resample
+scale = notebook.scale
+missing_dates = notebook.missing_dates
+
 df["date"] = df["date_time"].dt.date
 df["hour"] = df["date_time"].dt.hour
 daily_counts = df.groupby('date').size().reset_index(name='count')
@@ -63,13 +76,104 @@ def display_page(pathname):
     else:
         return gesamtuebersicht_layout
 
-# Layout for Gesamtübersicht
+all_days, missing_days = missing_dates(df, "date_time", "D")
+missing_days_plotly = [day.strftime("%Y-%m-%d") for day in missing_days]
+
+weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+sum_per_weekday = {k: 0 for k in weekdays}
+for day in missing_days:
+    sum_per_weekday[weekdays[day.weekday()]] += 1
+
+all_hours, missing_hours = missing_dates(df, date_col="date_time", freq='h')
+sum_per_hour = {k:0 for k in range(24)}
+for hour in missing_hours:
+    sum_per_hour[hour.hour] += 1
+
 gesamtuebersicht_layout = html.Div(
     children=[
-        html.H1('Gesamtübersicht'),
-        html.P('Diese Seite ist noch in Bearbeitung.')
-    ]
+        html.H1('Gesamtübersicht', style={'color': 'white'}),
+
+        # Plot für fehlende Tage über die Zeit
+        dcc.Graph(
+            id='missing-dates-plot',
+            figure={
+                'data': [
+                    {'x': all_days, 'y': np.ones(len(all_days)), 'type': 'scatter', 'mode': 'lines', 'line': {'color': '#636EFA'}, 'name': 'Available days'},
+                    {'x': missing_days, 'y': np.ones(len(missing_days)), 'type': 'scatter', 'mode': 'markers', 'marker': {'size': 10, 'color': '#EF553B'}, 'name': 'Missing days'},
+                ],
+                'layout': {
+                    'title': 'Missing days over time',
+                    'xaxis': {'title': 'Date', 'titlefont': {'color': 'white'}, 'tickfont': {'color': 'white'}},
+                    'yaxis': {'title': 'Available', 'titlefont': {'color': 'white'}, 'tickfont': {'color': 'white'}},
+                    'legend': {'x': 0.8, 'y': 0.95, 'traceorder': 'normal', 'bgcolor': '#1E1E1E', 'bordercolor': 'white', 'borderwidth': 2, 'font': {'color': 'white'}},
+                    'margin': {'l': 40, 'b': 40, 't': 40, 'r': 40},
+                    'template': 'plotly_dark',
+                    'plot_bgcolor': '#1E1E1E',
+                    'paper_bgcolor': '#1E1E1E',
+                    'font': {'color': 'white'}
+                }
+            }
+        ),
+
+        # Untere Ebene für die Barplots
+        html.Div(
+            children=[
+                # Plot für fehlende Einträge pro Wochentag
+                dcc.Graph(
+                    id='missing-entries-per-weekday',
+                    figure={
+                        'data': [
+                            {'x': list(sum_per_weekday.keys()), 'y': list(sum_per_weekday.values()), 'type': 'bar', 'name': 'Missing entries', 'marker': {'color': '#EF553B'}}
+                        ],
+                        'layout': {
+                            'title': 'Number of missing entries per weekday',
+                            'xaxis': {'title': 'Weekday', 'titlefont': {'color': 'white'}, 'tickfont': {'color': 'white'}},
+                            'yaxis': {'title': 'Missing entries', 'titlefont': {'color': 'white'}, 'tickfont': {'color': 'white'}},
+                            'margin': {'l': 40, 'b': 40, 't': 40, 'r': 40},
+                            'template': 'plotly_dark',
+                            'plot_bgcolor': '#1E1E1E',
+                            'paper_bgcolor': '#1E1E1E',
+                            'font': {'color': 'white'},
+                            'height': 250  # Höhe des Plots auf 250px setzen
+                        }
+                    }
+                ),
+
+                # Plot für fehlende Einträge pro Stunde
+                dcc.Graph(
+                    id='missing-entries-per-hour',
+                    figure={
+                        'data': [
+                            {'x': list(sum_per_hour.keys()), 'y': list(sum_per_hour.values()), 'type': 'bar', 'name': 'Missing entries', 'marker': {'color': '#EF553B'}}
+                        ],
+                        'layout': {
+                            'title': 'Number of missing entries per hour',
+                            'xaxis': {'title': 'Hour', 'titlefont': {'color': 'white'}, 'tickfont': {'color': 'white'}},
+                            'yaxis': {'title': 'Missing entries', 'titlefont': {'color': 'white'}, 'tickfont': {'color': 'white'}},
+                            'margin': {'l': 40, 'b': 40, 't': 40, 'r': 40},
+                            'template': 'plotly_dark',
+                            'plot_bgcolor': '#1E1E1E',
+                            'paper_bgcolor': '#1E1E1E',
+                            'font': {'color': 'white'},
+                            'height': 250  # Höhe des Plots auf 250px setzen
+                        }
+                    }
+                )
+            ],
+            style={'display': 'flex', 'flex-direction': 'row', 'justify-content': 'space-between', 'width': '100%', 'margin-top': '20px'}
+        )
+    ],
+    style={'backgroundColor': '#1E1E1E', 'color': 'white', 'padding': '20px'}
 )
+                  
+
+# # Layout for Gesamtübersicht
+# gesamtuebersicht_layout = html.Div(
+#     children=[
+#         html.H1('Gesamtübersicht'),
+#         html.P('Diese Seite ist noch in Bearbeitung.')
+#     ]
+# )
 
 # Layout for Monatsübersicht
 monatsuebersicht_layout = html.Div(
