@@ -29,7 +29,7 @@ class FeatureEngineering:
             pass
 
         if automated_feature_engineering:
-            self.X_train, self.X_test, self.y_train, self.y_test = self.feature_engineering(skip_scale = skip_scale)
+            self.X_train, self.X_val, self.X_test, self.y_train, self.y_val, self.y_test = self.feature_engineering(skip_scale = skip_scale)
 
     
     def feature_engineering(self, steps_to_forecast:int, input_time_steps:int = 1, skip_scale:bool = False, scaler = None, x_for_prediction:pd.DataFrame = None, only_predict:bool = False):
@@ -66,28 +66,40 @@ class FeatureEngineering:
             x,y = self.split_features_and_labels(self.df, y_col = self.label)
             self.X_train, self.X_test, self.y_train, self.y_test = self.train_test_split_time_series(x, y)
 
+            val_index = int(0.1 * self.X_train.shape[0])
+            self.X_val = self.X_train.iloc[-val_index:, :]
+            self.y_val = self.y_train.iloc[-val_index:]
+            self.X_train = self.X_train.iloc[:-val_index, :]
+            self.y_train = self.y_train.iloc[:-val_index]
+
 
             if skip_scale == False:
                 try:
                     self.X_train = self.scale_values(self.X_train, scaler, test = False)
+                    self.X_val = self.scale_values(self.X_val, scaler, test = True)
                     self.X_test = self.scale_values(self.X_test, scaler, test = True)
                 except:
                     print("The scaler which the user has given as an input is invalid. Using scaler of this class object instead.")
                     self.X_train = self.scale_values(self.X_train, self.sc, test = False)
+                    self.X_val = self.scale_values(self.X_val, self.sc, test = True)
                     self.X_test = self.scale_values(self.X_test, self.sc, test = True)
 
             df_train = self.X_train
             df_train[self.label] = self.y_train
 
+            df_val = self.X_val
+            df_val[self.label] = self.y_val
+
             df_test = self.X_test
             df_test[self.label] = self.y_test
 
             train_reframed = self.transform_data_for_forecasting(df_train, self.label, input_time_steps, steps_to_forecast)
+            val_reframed = self.transform_data_for_forecasting(df_val, self.label, input_time_steps, steps_to_forecast)
             test_reframed = self.transform_data_for_forecasting(df_test, self.label, input_time_steps, steps_to_forecast)
 
-            self.X_train, self.X_test, self.y_train, self.y_test = self.transform_to_numpy_array(train_reframed, test_reframed, steps_to_forecast)
+            self.X_train, self.X_val, self.X_test, self.y_train, self.y_val, self.y_test = self.transform_to_numpy_array(train_reframed, val_reframed, test_reframed, steps_to_forecast)
             
-            return self.X_train, self.X_test, self.y_train, self.y_test
+            return self.X_train, self.X_val, self.X_test, self.y_train, self.y_val, self.y_test
         
         else:
             # for the deployment (or simple predictions of data with unknown labels)
@@ -297,36 +309,36 @@ class FeatureEngineering:
     
 
 
-    def transform_to_numpy_array(self, train_data, test_data, steps_to_forecast):
+    def transform_to_numpy_array(self, train_data, val_data, test_data, steps_to_forecast):
         # split into train and test sets
 
         train_X, train_y = train_data.iloc[:, :-steps_to_forecast], train_data.iloc[:, -steps_to_forecast:]
+        val_X, val_y = val_data.iloc[:, :-steps_to_forecast], val_data.iloc[:, -steps_to_forecast:]
         test_X, test_y = test_data.iloc[:, :-steps_to_forecast], test_data.iloc[:, -steps_to_forecast:]
 
-        # self.sc = StandardScaler()
-
-        # train_X = self.sc.fit_transform(train_X)
-        # test_X = self.sc.transform(test_X)
-
         train_X = self.scale_values(x = train_X, test = False, scaler = self.sc)
+        val_X = self.scale_values(x = val_X, test = True, scaler = self.sc)
         test_X = self.scale_values(x = test_X, test = True, scaler = self.sc)
 
         train_X = train_X.values
+        val_X = val_X.values
         test_X = test_X.values
 
         # reshape input to be 3D [samples, timesteps, features]
         train_X = train_X.reshape((train_X.shape[0], 1, train_X.shape[1]))
+        val_X = val_X.reshape((val_X.shape[0], 1, val_X.shape[1]))
         test_X = test_X.reshape((test_X.shape[0], 1, test_X.shape[1]))
-        
-        #print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)
 
         train_X = np.asarray(train_X).astype('float32')
         train_y = np.asarray(train_y).astype('float32')
 
+        val_X = np.asarray(val_X).astype('float32')
+        val_y = np.asarray(val_y).astype('float32')
+
         test_X = np.asarray(test_X).astype('float32')
         test_y = np.asarray(test_y).astype('float32')
 
-        return train_X, test_X, train_y, test_y
+        return train_X, val_X, test_X, train_y, val_y, test_y
     
 
     def transform_to_numpy_array_without_label(self, data):
