@@ -1,5 +1,8 @@
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+import sys
 import numpy as np
 import pandas as pd
 
@@ -60,7 +63,7 @@ class FeatureEngineering:
 
         if only_predict == False:
             self.df = self.df.sort_index(axis=1)
-            self.df = self.onehotencoding(self.categorical_features)
+            self.df = self.onehotencoding(self.df, self.categorical_features)
 
             # for the model training
             x,y = self.split_features_and_labels(self.df, y_col = self.label)
@@ -104,7 +107,7 @@ class FeatureEngineering:
         else:
             # for the deployment (or simple predictions of data with unknown labels)
             self.df = x_for_prediction.copy()
-            self.df = self.onehotencoding(self.categorical_features)
+            self.df = self.onehotencoding(self.df, self.categorical_features, only_predict = True)
             
             if skip_scale == False:
                 try:
@@ -138,13 +141,14 @@ class FeatureEngineering:
         x = df.drop(columns = [y_col], axis = 1)
 
         return x,y
+        
 
-    
-    def onehotencoding(self, categorical_features:list):
+    def onehotencoding(self, data, categorical_features:list, only_predict:bool = False):
         """Convert categorical features into numerical ones 
         (e.g. color with values 'blue' or 'yellow' leads to two new columns: color_blue, color_yellow. Both with binary values).
         
         Args:
+            :data (pandas.DataFrame): data with columns to onehotencode.
             :categorical_features (list): names of features in the data which include categorical features.
         
         Returns:
@@ -153,22 +157,30 @@ class FeatureEngineering:
 
         if len(categorical_features) >= 1:
             try:
-                for ohe_feature in categorical_features:
-                    ohe_df = pd.get_dummies(self.df[f"{ohe_feature}"], prefix = f"{ohe_feature}", dtype = "int")
-                    # add the new columns to the dataframe
-                    self.df = pd.concat([self.df, ohe_df], axis = 1)
-                    # drop the old column
-                    self.df = self.df.drop(columns = [f"{ohe_feature}"], axis = 1)
 
-                return self.df
+                if only_predict == False:
+                    self.ohe = OneHotEncoder(handle_unknown = 'ignore', sparse_output = False, dtype = int)
+
+                    self.column_transformer = ColumnTransformer(
+                        transformers=[
+                            ('', self.ohe, categorical_features)
+                        ],
+                        remainder='drop'
+                    )
+
+                    self.column_transformer.fit(data)
+
+                ohe_data = self.column_transformer.transform(data)
+                ohe_df = pd.DataFrame(ohe_data, columns = self.column_transformer.get_feature_names_out(), index = data.index)
+                data = pd.concat([data.drop(columns = categorical_features), ohe_df], axis=1)
+
+                return data
                 
             except Exception as e:
-                print(e)
-
-                return self.df
+                sys.exit(e)
         
         else:
-            return self.df
+            return data
     
 
     def scale_values(self, x, scaler, test:bool):
