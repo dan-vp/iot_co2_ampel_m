@@ -58,10 +58,16 @@ class Predictor:
 
         x = pd.DataFrame(x[:, 0, :], columns = self.feature_engineerer.columns_after_feature_engineering)
 
-        # Create a new column by getting the column name for the max value in the one-hot encoded columns
-        pred_df[prefix] = x[onehot_cols].idxmax(axis=1).str.replace(f'{prefix}_', '').str.replace("(t-1)", "")
+        prefix = "__room_number"
+        onehot_cols = [col for col in self.feature_engineerer.columns_after_feature_engineering if col.startswith(prefix)]
+        # Führe die onehotencodeten Spalten der Raumnummer in eine gemeinsame Spalte zurück (wie nach dem Preprocessing und vor dem Feature Engineering)
+        pred_df[prefix] = x[onehot_cols].idxmax(axis=1).str.replace(f'{prefix}_', '')
+
+        pred_df.rename(columns = {prefix: "room_number"}, inplace = True)
 
         pred_df.index = self.df.index
         pred_df.index.name = "date_time"
+
+        pred_df.room_number = pred_df.room_number.str.split("(").str[0]
 
         return pred_df
