@@ -513,6 +513,8 @@ a {
 }
 .has-value.Select--single>.Select-control .Select-value .Select-value-label, .has-value.is-pseudo-focused.Select--single>.Select-control .Select-value .Select-value-labeln {
   color: #d8d8d8;
+  background: #1E1E1E;
+  background-color: #1E1E1E;
   font-weight: 400;
   font-size: 14px;
 }
