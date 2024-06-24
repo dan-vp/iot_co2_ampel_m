@@ -1,4 +1,4 @@
-from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error, root_mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error, r2_score
 
 class Evaluator:
 
@@ -17,7 +17,7 @@ class Evaluator:
         return round(mean_squared_error(y_true = y_true, y_pred = y_pred), 2)
 
     def calculate_rmse(self, y_true, y_pred):
-        return round(root_mean_squared_error(y_true = y_true, y_pred = y_pred), 2)
+        return round(mean_squared_error(y_true = y_true, y_pred = y_pred)**0.5, 2)
 
     def calculate_mape(self, y_true, y_pred):
         return round(mean_absolute_percentage_error(y_true = y_true, y_pred = y_pred), 2)
