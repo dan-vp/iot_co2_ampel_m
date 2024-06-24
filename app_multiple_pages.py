@@ -9,7 +9,6 @@ from ML_Preparation.Feature_Engineering import *
 import tensorflow as tf
 from Evaluator import Evaluator
 import plotly.express as px
-import pickle
 from ML_Deployment import *
 import dash_table
 
@@ -33,18 +32,42 @@ room_numbers = df['room_number'].unique()
 room_numbers_forecast = ["m209"]
 n_steps = 7
 
-
-fe = pickle.load(open("feature_engineerer.pickle", "rb"))
+print("läuft 1")
+fe = FeatureEngineering(df_forecast,
+                        label = "CO2", 
+                        categorical_features = ["season", "room_number", "dayofweek"],
+                        automated_feature_engineering = False)
+print("läuft 2")
 X_train, X_val, X_test, y_train, y_val, y_test = fe.feature_engineering(steps_to_forecast = n_steps, skip_scale = True)
+print("läuft 3")
 model = tf.keras.models.load_model(f"CO2_Forecasting_Model.keras")
+print("läuft 4")
 pred = model.predict(fe.X_test)
+print("läuft 5")
 fe.df = df_raw.copy()
+print("läuft 6")
 deployer = Predictor(data = df_raw, feature_engineering_class_object = fe, label = "CO2", is_forecast = True, roll = True, steps_to_forecast = 2)
-# forecasted_pred = deployer.predict(x = deployer.x, model = model)
-# forecasted_pred.reset_index(inplace=True)
+print("läuft 7")
+forecasted_pred = deployer.predict(x = deployer.x, model = model)
+forecasted_pred.reset_index(inplace=True)
+forecasted_pred = forecasted_pred[forecasted_pred["date_time"] == df_forecast.date_time.max()].sort_values("room_number")
 
 ev = Evaluator()
 
+fig_forecast = px.line(y = [fe.y_test[:, 0], pred[:, 0]], 
+            labels = {"wide_variable_0": "y_true",
+                    "wide_variable_1": "Modell 1 - Vorhersage (Wetterdaten + Jahreszeiten)"})
+
+fig_forecast.update_layout(
+        colorway=["#5E0DAC", '#FF4F00', '#375CB1', '#FF7400', '#FFF400', '#FF0056'],
+        template='plotly_dark',
+        paper_bgcolor='rgba(0, 0, 0, 0)',
+        plot_bgcolor='rgba(0, 0, 0, 0)',
+        margin={'b': 15},
+        hovermode='x',
+        autosize=True,
+        title={'text':  f"Forecast für CO2(t + {0})  blau = y_true, rot = y_pred", 'font': {'color': 'white'}, 'x': 0.5},           
+    )
 # Initialize the app
 app = dash.Dash(__name__)
 app.config.suppress_callback_exceptions = True
@@ -61,7 +84,7 @@ sidebar_layout = html.Div(
         html.H2('Navigation'),
         html.Ul(
             children=[
-                html.Li(dcc.Link('Gesamtübersicht', href='/')),
+                html.Li(dcc.Link('Übersicht', href='/uebersicht')),
                 html.Li(dcc.Link('Monatsübersicht', href='/monatsuebersicht')),
                 html.Li(dcc.Link('Tagesübersicht', href='/tagesuebersicht')),
                 html.Li(dcc.Link('Forecast', href='/forecast'))
@@ -74,7 +97,7 @@ sidebar_layout = html.Div(
 # Layout for the main content
 app.layout = html.Div(
     children=[
-        dcc.Location(id='url', refresh=False),
+        dcc.Location(id='url', refresh=True),
         sidebar_layout,
         html.Div(id='page-content', style={'padding': '10px', 'width': '75%', 'display': 'inline-block', 'verticalAlign': 'top'})
     ]
@@ -91,16 +114,25 @@ def display_page(pathname):
     elif pathname == '/forecast':
         return forecast_layout
     else:
-        return gesamtuebersicht_layout
+        return uebersicht_layout
 
-# Layout for Gesamtübersicht
-gesamtuebersicht_layout = html.Div(
+uebersicht_layout = html.Div(
     children=[
-        html.H1('Gesamtübersicht'),
-        html.P('Diese Seite ist noch in Bearbeitung.')
+        html.H1('Übersicht'),
+        html.Div(
+            children=[
+                html.P('Wähle Filteroptionen:'),
+                dcc.Dropdown(id='count-filter-selector', options=room_options,
+                             multi=True,
+                             style={'backgroundColor': '#1E1E1E', 'width': '80%', 'display': 'inline-block'},
+                             className='count-filterselector'
+                )
+            ],
+            style={'display': 'flex', 'alignItems': 'center'}
+        ),
+        dcc.Graph(id='count-timeseries', config={'displayModeBar': False}, animate=False),
     ]
 )
-
 # Layout for Monatsübersicht
 monatsuebersicht_layout = html.Div(
     children=[
@@ -123,7 +155,7 @@ monatsuebersicht_layout = html.Div(
             ],
             style={'display': 'flex', 'alignItems': 'center'}
         ),
-        dcc.Graph(id='month-timeseries', config={'displayModeBar': False}, animate=True),
+        dcc.Graph(id='month-timeseries', config={'displayModeBar': False}, animate=False),
     ]
 )
 
@@ -149,62 +181,31 @@ tagesuebersicht_layout = html.Div(
             ],
             style={'display': 'flex', 'alignItems': 'center'}
         ),
-        dcc.Graph(id='timeseries', config={'displayModeBar': False}, animate=True),
+        dcc.Graph(id='timeseries', config={'displayModeBar': False}, animate=False),
         html.Br(),
         html.H1('Tagesübersicht für angegebenen Tag'),
         dcc.Input(id='time-input', type='text', value=str(df["date"].max()), 
                   style={'backgroundColor': '#1E1E1E', 'color':'white'},
                   className='dateinput'),
-        dcc.Graph(id='daily-timeseries', config={'displayModeBar': False}, animate=True)
+        dcc.Graph(id='daily-timeseries', config={'displayModeBar': False}, animate=False)
     ]
 )
-
-fig_forecast = px.line(y = [fe.y_test[:, 0], pred[:, 0]], 
-            labels = {"wide_variable_0": "y_true",
-                    "wide_variable_1": "Modell 1 - Vorhersage (Wetterdaten + Jahreszeiten)"})
-
-fig_forecast.update_layout(
-        colorway=["#5E0DAC", '#FF4F00', '#375CB1', '#FF7400', '#FFF400', '#FF0056'],
-        template='plotly_dark',
-        paper_bgcolor='rgba(0, 0, 0, 0)',
-        plot_bgcolor='rgba(0, 0, 0, 0)',
-        margin={'b': 15},
-        hovermode='x',
-        autosize=True,
-        title={'text':  f"Forecast für CO2(t + {0})  blau = y_true, rot = y_pred", 'font': {'color': 'white'}, 'x': 0.5},           
-    )
 
 forecast_layout = html.Div(
     children=[
         html.H1('Forecast'),
-        dcc.Graph(id='forecastgraph',figure= fig_forecast, config={'displayModeBar': False}, animate=True),
+        dcc.Graph(id='forecastgraph',figure= fig_forecast, config={'displayModeBar': False}, animate=False),
         html.Div(id='input-warning', style={'display': 'inline-block', 'width': '4%'}),
         html.H1('CO2-Forecast für die nächsten 7 Tage'),
-        dcc.Dropdown(id='forecast-selector', options=room_options,
-                     multi=False, value=['all'],
-                     style={'backgroundColor': '#1E1E1E', 'width': '48%', 'display': 'inline-block'}),
         dash_table.DataTable(
             id='table',
+            columns=[{"name": i, "id": i} for i in forecasted_pred.columns],
+            data=forecasted_pred.to_dict('records'),
             style_cell={'backgroundColor': '#2D2D2D', 'color': 'white'},
-            style_header={'backgroundColor': '#1E1E1E', 'fontWeight': 'bold'})
+            style_header={'backgroundColor': '#1E1E1E', 'fontWeight': 'bold'},
+            style_table={'height': '300px', 'overflowY': 'auto'})
     ]
 )
-
-@app.callback([Output('table', 'data')],
-              [Input('forecast-selector', 'value')])
-
-def update_table(selected_option):
-    forecasted_pred = deployer.predict(x = deployer.x, model = model)
-    forecasted_pred.reset_index(inplace=True)
-    forecasted_pred_filtered = forecasted_pred[forecasted_pred["room_number"] == selected_option]
-    
-    # Überprüfen Sie, ob Daten für die ausgewählte Raumnummer vorhanden sind
-    if not forecasted_pred_filtered.empty:
-        # Wenn Daten vorhanden sind, geben Sie die letzten Zeile als Liste von Dicts zurück
-        return [forecasted_pred_filtered.tail(1).to_dict('records')]
-    else:
-        # Handle the case when no data is available for the selected option
-        return [[]]
     
 @app.callback(
     [Output("input-warning", 'children'), 
@@ -216,6 +217,9 @@ def update_table(selected_option):
 )
 def update_filter_options(sensordata):
     """Aktualisiert die Filteroptionen basierend auf der Anzahl der ausgewählten Sensordaten"""
+
+    print(sensordata)
+
     warning = None
     room_disabled = False
     multi_select = True
@@ -228,13 +232,14 @@ def update_filter_options(sensordata):
         selected_value = 'all'  # Setze auf 'Keine Filterung'
     else:
         selected_value = ['all']  # Standardwert, wenn weniger als zwei Sensordaten ausgewählt sind
-
+    print(warning, room_options, selected_value, room_disabled, multi_select)
     return [warning, room_options, selected_value, room_disabled, multi_select]
 
 @app.callback(Output('timeseries', 'figure'),
               [Input('filter-selector', 'value'),
                Input('sensordataselector', 'value')])
 def update_timeseries(selected_filters, selected_dropdown_value):
+    print(selected_filters, selected_dropdown_value)
     ''' Zeichnet die Verläufe der ausgewählten Sensordaten basierend auf dem aktuell ausgewählten Filter '''
     if len(selected_dropdown_value) > 2:
         selected_dropdown_value = selected_dropdown_value[:2]
@@ -249,6 +254,7 @@ def update_timeseries(selected_filters, selected_dropdown_value):
     # Überprüfen, ob "all" in den ausgewählten Filtern ist, und fügen Sie entsprechende Traces hinzu
     if 'all' in selected_filters:
         for data in selected_dropdown_value:
+            print("fig wird geupdated 1")
             data_daily_all = df.groupby('hour', as_index=False).agg({data: "mean"})
             fig.add_trace(
                 go.Scatter(x=data_daily_all["hour"],
@@ -267,6 +273,8 @@ def update_timeseries(selected_filters, selected_dropdown_value):
             room_daily = room_data.groupby('hour', as_index=False).agg({data: "mean"})
             # Setzen Sie den Namen des Traces basierend auf dem spezifischen Raum
             trace_name = f'{data} (alle Räume)' if room == 'all' else f'{data} (Raum {room})'
+            print("fig wird geupdated 2")
+            print(trace_name)
             fig.add_trace(
                 go.Scatter(x=room_daily["hour"],
                         y=room_daily[data],
@@ -277,6 +285,7 @@ def update_timeseries(selected_filters, selected_dropdown_value):
                 secondary_y=False if data == selected_dropdown_value[0] else True)
                 
 
+    print("fig wird geupdatet 3")
     # Aktualisieren Sie das Layout des Plots
     fig.update_layout(
         colorway=["#5E0DAC", '#FF4F00', '#375CB1', '#FF7400', '#FFF400', '#FF0056'],
@@ -442,7 +451,56 @@ def update_monthly_timeseries(selected_filters, selected_dropdown_value):
         xaxis={'title': 'Datum', 'range': [df.date.min(), df.date.max()]},           
     )
     return fig
+
+@app.callback(Output('count-timeseries', 'figure'),
+              [Input('count-filter-selector', 'value')])
+
+def update_count_timeseries(selected_filters):
+    ''' Zeichnet die Verläufe der ausgewählten Sensordaten basierend auf dem aktuell ausgewählten Filter '''
+
+    # Überprüfen, ob die ausgewählten Filter eine Liste sind, wenn nicht, in eine Liste umwandeln
+    if not isinstance(selected_filters, list):
+        selected_filters = [selected_filters]
+
+    # Erstellen Sie das Figure-Objekt
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # Überprüfen, ob "all" in den ausgewählten Filtern ist, und fügen Sie entsprechende Traces hinzu
+    if 'all' in selected_filters:
+            #data_daily_all = df.groupby('date', as_index=False).agg({data: "mean"})
+         fig.add_trace(
+            go.Histogram(x=df["date"],
+                        opacity=0.7,
+                        nbinsx=50,
+                        name=f'count (alle Räume)'))
+
+    #Fügen Sie Traces für die ausgewählten Räume hinzu
     
+    for room in selected_filters:
+        if room != 'all':
+            room_data = df[df['room_number'] == room]
+                #room_daily = room_data.groupby('date', as_index=False).agg({data: "mean"})
+                # Setzen Sie den Namen des Traces basierend auf dem spezifischen Raum
+            trace_name = f'count (alle Räume)' if room == 'all' else f'count (Raum {room})'
+            fig.add_trace(
+                go.Histogram(x=room_data["date"],
+                        opacity=0.7,
+                        name=trace_name))
+                
+
+    # Aktualisieren Sie das Layout des Plots
+    fig.update_layout(
+        colorway=["#5E0DAC", '#FF4F00', '#375CB1', '#FF7400', '#FFF400', '#FF0056'],
+        template='plotly_dark',
+        paper_bgcolor='rgba(0, 0, 0, 0)',
+        plot_bgcolor='rgba(0, 0, 0, 0)',
+        margin={'b': 15},
+        hovermode='x',
+        autosize=True,
+        title={'text': 'Anzahl der gesammelten Daten über das Jahr verteilt', 'font': {'color': 'white'}, 'x': 0.5},
+        xaxis={'title': 'Datum', 'range': [df.date.min(), df.date.max()]},           
+    )
+    return fig
 
 if __name__ == '__main__':
     app.run_server(debug=True)
