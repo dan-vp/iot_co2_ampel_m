@@ -34,16 +34,11 @@ class Predictor:
         Returns:
             pred_df (pandas.DataFrame): a dataset with a prediction in a given room at a given timestamp.
         """
-
-        prefix = "room_number"
-        onehot_cols = [col for col in self.feature_engineerer.columns_after_feature_engineering if col.startswith(prefix)]
         
         # if the given model is a Keras model.
-        try:
-            input_shape = model.input_shape
-            pred = model.predict(x.values.reshape(x.shape[0], 1, input_shape[-1]).astype(np.float32))
-        except Exception as e:
-            pred = model.predict(x)
+        pred = model.predict(x)
+
+        room_numbers = self.df["room_number"]
             
         pred_columns = list()
 
@@ -58,16 +53,17 @@ class Predictor:
 
         x = pd.DataFrame(x[:, 0, :], columns = self.feature_engineerer.columns_after_feature_engineering)
 
-        prefix = "__room_number"
-        onehot_cols = [col for col in self.feature_engineerer.columns_after_feature_engineering if col.startswith(prefix)]
+        # prefix = "__room_number"
+        # onehot_cols = [col for col in self.feature_engineerer.columns_after_feature_engineering if col.startswith(prefix)]
         # Führe die onehotencodeten Spalten der Raumnummer in eine gemeinsame Spalte zurück (wie nach dem Preprocessing und vor dem Feature Engineering)
-        pred_df[prefix] = x[onehot_cols].idxmax(axis=1).str.replace(f'{prefix}_', '')
+        # pred_df[prefix] = x[onehot_cols].idxmax(axis=1).str.replace(f'{prefix}_', '')
 
-        pred_df.rename(columns = {prefix: "room_number"}, inplace = True)
+        # pred_df.rename(columns = {prefix: "room_number"}, inplace = True)
 
         pred_df.index = self.df.index
         pred_df.index.name = "date_time"
+        pred_df["room_number"] = room_numbers
 
-        pred_df.room_number = pred_df.room_number.str.split("(").str[0]
+        # pred_df.room_number = pred_df.room_number.str.split("(").str[0]
 
         return pred_df
