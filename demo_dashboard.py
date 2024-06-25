@@ -57,7 +57,8 @@ fig_forecast.update_layout(
         title={'text':  f"Forecast für CO2(t + {0})  blau = y_true, rot = y_pred", 'font': {'color': 'white'}, 'x': 0.5},           
     )
 # Initialize the app
-app = dash.Dash(__name__)
+external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 app.config.suppress_callback_exceptions = True
 
 def get_options(sensor_data):
@@ -118,7 +119,7 @@ uebersicht_layout = html.Div(
             ],
             style={'display': 'flex', 'alignItems': 'center'}
         ),
-        dcc.Graph(id='count-timeseries', config={'displayModeBar': False}, animate=False),
+        dcc.Graph(id='count-timeseries', config={'displayModeBar': False}, animate=False, style={'backgroundColor': '#2D2D2D'}),
     ]
 )
 # Layout for Monatsübersicht
@@ -143,7 +144,7 @@ monatsuebersicht_layout = html.Div(
             ],
             style={'display': 'flex', 'alignItems': 'center'}
         ),
-        dcc.Graph(id='month-timeseries', config={'displayModeBar': False}, animate=False),
+        dcc.Graph(id='month-timeseries', config={'displayModeBar': False}, animate=False, style={'backgroundColor': '#2D2D2D'}),
     ]
 )
 
@@ -169,13 +170,13 @@ tagesuebersicht_layout = html.Div(
             ],
             style={'display': 'flex', 'alignItems': 'center'}
         ),
-        dcc.Graph(id='timeseries', config={'displayModeBar': False}, animate=False),
+        dcc.Graph(id='timeseries', config={'displayModeBar': False}, animate=False, style={'backgroundColor': '#2D2D2D'}),
         html.Br(),
         html.H1('Tagesübersicht für angegebenen Tag'),
         dcc.Input(id='time-input', type='text', value=str(df["date"].max()), 
                   style={'backgroundColor': '#1E1E1E', 'color':'white'},
                   className='dateinput'),
-        dcc.Graph(id='daily-timeseries', config={'displayModeBar': False}, animate=False)
+        dcc.Graph(id='daily-timeseries', config={'displayModeBar': False}, animate=False, style={'backgroundColor': '#2D2D2D'})
     ]
 )
 
@@ -183,7 +184,10 @@ tagesuebersicht_layout = html.Div(
 forecast_layout = html.Div(
     children=[
         html.H1('Forecast'),
-        dcc.Graph(id='forecastgraph',figure= fig_forecast, config={'displayModeBar': False}, animate=False),
+        dcc.Graph(id='forecastgraph',
+                  figure= fig_forecast, 
+                  config={'displayModeBar': False}, animate=False,
+                  style={'backgroundColor': '#2D2D2D'}),
         html.Div(id='input-warning', style={'display': 'inline-block', 'width': '4%'}),
         html.H1('CO2-Forecast für die nächsten 7 Tage'),
         dash_table.DataTable(
