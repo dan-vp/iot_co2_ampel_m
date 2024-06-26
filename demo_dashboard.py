@@ -21,7 +21,7 @@ df["date"] = df["date_time"].dt.date
 df["hour"] = df["date_time"].dt.hour
 
 sensor_data_liste = ['tmp', 'hum', 'CO2', 'VOC', 'vis', 'IR', 'BLE']
-room_numbers = df['room_number'].unique()
+room_numbers = df['room_number'].sort_values().unique()
 n_steps = 7
 
 # loading Forecast
